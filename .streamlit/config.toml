@@ -1,0 +1,5 @@
+[server]
+headless = true  # Required for Streamlit Cloud
+port = 8501
+enableCORS = false
+maxUploadSize = 200  # Allows larger DB files

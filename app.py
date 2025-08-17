@@ -5,6 +5,12 @@ import matplotlib.pyplot as plt
 from database import *
 from pdf_generator import generate_pdf_report, generate_category_pdf_report
 import io
+from database import initialize_database
+
+# Ensure DB exists when app starts
+if not os.path.exists("expense_tracker.db"):
+    initialize_database()
+
 
 # Initialize session state
 if 'vat_rate' not in st.session_state:

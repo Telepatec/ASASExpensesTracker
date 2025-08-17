@@ -1,14 +1,19 @@
 import sqlite3
+import os
+from pathlib import Path
+from datetime import datetime, timedelta
 import pandas as pd
-from datetime import datetime, timedelta, date
+import streamlit as st
 
-print("THIS IS THE CORRECT DATABASE.PY FROM:", __file__)
+# Database configuration
+DB_PATH = Path(__file__).parent / "expense_tracker.db"
 
 def initialize_database():
-    conn = sqlite3.connect('expense_tracker.db')
+    """Initialize database with tables and default categories if missing"""
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     
-    # Only create tables if they don't exist (remove DROP TABLE statements)
+    # Create tables if they don't exist
     c.execute('''CREATE TABLE IF NOT EXISTS categories
                  (id INTEGER PRIMARY KEY,
                  name TEXT NOT NULL,
@@ -33,7 +38,7 @@ def initialize_database():
                  FOREIGN KEY (subsubcategory_id) REFERENCES categories(id),
                  FOREIGN KEY (subsubsubcategory_id) REFERENCES categories(id))''')
     
-    # Only insert default categories if they don't exist
+    # Only insert default categories if none exist
     c.execute("SELECT COUNT(*) FROM categories")
     if c.fetchone()[0] == 0:
         insert_default_categories(conn)
@@ -42,16 +47,16 @@ def initialize_database():
     conn.close()
 
 def insert_default_categories(conn):
+    """Insert default category hierarchy"""
     c = conn.cursor()
     
     # Main Categories
     main_categories = ["Food", "Fuel", "Lubricants", "Utilities", "Spare Parts"]
     for cat in main_categories:
         c.execute("INSERT INTO categories (name, level) VALUES (?, ?)", (cat, 1))
-    
-    # Get main category IDs
-    c.execute("SELECT id, name FROM categories WHERE level = 1")
-    main_cats = {name: id for id, name in c.fetchall()}
+        
+        c.execute("SELECT id, name FROM categories WHERE level = 1")
+        main_cats = {name: id for id, name in c.fetchall()}
     
     # Food Subcategories (level 2)
     food_subs = ["Worker Groceries", "Worker Water", "Worker Tea", 
@@ -126,7 +131,7 @@ def insert_default_categories(conn):
                     (item, subcategory_id, 3))
 
 def get_categories(level=None, parent_id=None):
-    conn = sqlite3.connect('expense_tracker.db')
+    conn = get_connection()
     c = conn.cursor()
     
     query = "SELECT id, name FROM categories"
@@ -149,7 +154,7 @@ def get_categories(level=None, parent_id=None):
     return categories
 
 def get_category_id(name, parent_id=None):
-    conn = sqlite3.connect('expense_tracker.db')
+    conn = get_connection()
     c = conn.cursor()
     if parent_id:
         c.execute("SELECT id FROM categories WHERE name = ? AND parent_id = ?", (name, parent_id))
@@ -161,7 +166,7 @@ def get_category_id(name, parent_id=None):
 
 def save_expense(date, category, subcategory, subsubcategory, subsubsubcategory, 
                 description, amount_before_vat, vat_amount, total_amount, entered_by):
-    conn = sqlite3.connect('expense_tracker.db')
+    conn = get_connection()
     c = conn.cursor()
     
     try:
@@ -197,7 +202,7 @@ def save_expense(date, category, subcategory, subsubcategory, subsubsubcategory,
         conn.close()  # Ensure connection always closes
 
 def get_expenses(period=None, custom_dates=None):
-    conn = sqlite3.connect('expense_tracker.db')
+    conn = get_connection()
     
     query = '''SELECT e.id, e.date, 
                       c1.name as category, 
@@ -246,7 +251,7 @@ def get_expenses(period=None, custom_dates=None):
     return df
 
 def get_expenses_by_user(username, start_date=None, end_date=None):
-    conn = sqlite3.connect('expense_tracker.db')
+    conn = get_connection()
     
     query = '''SELECT e.id, e.date, 
                       c1.name as category, 
@@ -278,7 +283,7 @@ def get_category_summary(start_date=None, end_date=None):
     """Get category summary with optional date filtering"""
     print(f"DEBUG: Running get_category_summary with {start_date} to {end_date}")  # Verification
     
-    conn = sqlite3.connect('expense_tracker.db')
+    conn = get_connection()
     
     query = '''
     SELECT 
@@ -312,7 +317,7 @@ def get_category_summary(start_date=None, end_date=None):
     return df
 
 def get_expense_by_id(expense_id):
-    conn = sqlite3.connect('expense_tracker.db')
+    conn = get_connection()
     c = conn.cursor()
     c.execute('''SELECT * FROM expenses WHERE id = ?''', (expense_id,))
     result = c.fetchone()
@@ -326,7 +331,7 @@ def get_expense_by_id(expense_id):
     return None
 
 def update_expense(expense_id, description=None, amount_before_vat=None):
-    conn = sqlite3.connect('expense_tracker.db')
+    conn = get_connection()
     c = conn.cursor()
     
     if description and amount_before_vat:
@@ -364,7 +369,7 @@ def update_expense(expense_id, description=None, amount_before_vat=None):
     conn.close()
 
 def get_all_expenses():
-    conn = sqlite3.connect('expense_tracker.db')
+    conn = get_connection()
     query = '''SELECT e.id, e.date, 
                       c1.name as category, 
                       c2.name as subcategory, 
@@ -388,3 +393,14 @@ def get_all_expenses_pdf():
     from pdf_generator import generate_pdf_report
     df = get_all_expenses()
     return generate_pdf_report(df, "All Expense Records")
+
+def get_connection():
+    """Get a database connection"""
+    return sqlite3.connect(DB_PATH)
+
+# Initialize database if missing (with verification)
+if not DB_PATH.exists():
+    print(f"Initializing new database at {DB_PATH}")
+    initialize_database()
+else:
+    print(f"Using existing database at {DB_PATH}")
