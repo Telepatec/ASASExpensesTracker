@@ -51,3 +51,44 @@ def generate_pdf_report(df, title):
         pdf.cell(col_widths[-1], 10, txt=f"{df['total_amount'].sum():.2f}", border=1)
     
     return pdf.output(dest='S').encode('latin-1')
+
+def generate_category_pdf_report(df, title):
+    """Generate a PDF report for category summaries"""
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", size=12)
+    
+    # Title
+    pdf.set_font("Arial", 'B', 16)
+    pdf.cell(200, 10, txt=title, ln=1, align="C")
+    pdf.ln(10)
+    
+    # Column widths
+    col_widths = [60, 60, 60]
+    
+    # Table header
+    headers = ["Category", "Subcategory", "Total Amount"]
+    pdf.set_font("Arial", 'B', 10)
+    for i, header in enumerate(headers):
+        pdf.cell(col_widths[i], 10, txt=header, border=1)
+    pdf.ln()
+    
+    # Table rows
+    pdf.set_font("Arial", size=10)
+    for _, row in df.iterrows():
+        if row['category'] == 'TOTAL':
+            continue
+        pdf.cell(col_widths[0], 10, txt=str(row.get('category', '')), border=1)
+        pdf.cell(col_widths[1], 10, txt=str(row.get('subcategory', '')), border=1)
+        pdf.cell(col_widths[2], 10, txt=f"{row.get('total_amount', 0):.2f}", border=1)
+        pdf.ln()
+    
+    # Add total
+    if 'total_amount' in df.columns and len(df) > 0:
+        total = df[df['category'] == 'TOTAL']['total_amount'].values[0]
+        pdf.ln(5)
+        pdf.set_font("Arial", 'B', 10)
+        pdf.cell(sum(col_widths[:-1]), 10, txt="TOTAL:", align='R')
+        pdf.cell(col_widths[-1], 10, txt=f"{total:.2f}", border=1)
+    
+    return pdf.output(dest='S').encode('latin-1')
