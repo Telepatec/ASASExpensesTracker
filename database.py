@@ -148,10 +148,13 @@ def get_categories(level=None, parent_id=None):
     conn.close()
     return categories
 
-def get_category_id(name):
+def get_category_id(name, parent_id=None):
     conn = sqlite3.connect('expense_tracker.db')
     c = conn.cursor()
-    c.execute("SELECT id FROM categories WHERE name = ?", (name,))
+    if parent_id:
+        c.execute("SELECT id FROM categories WHERE name = ? AND parent_id = ?", (name, parent_id))
+    else:
+        c.execute("SELECT id FROM categories WHERE name = ?", (name,))
     result = c.fetchone()
     conn.close()
     return result[0] if result else None

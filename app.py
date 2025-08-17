@@ -67,32 +67,28 @@ def record_expense_page():
     
     # Subcategory selection (only show if main category is selected)
     if st.session_state.main_category:
-        subcategories = get_categories(
-            level=2, 
-            parent_id=get_category_id(st.session_state.main_category)
-        )
-        
+        main_cat_id = get_category_id(st.session_state.main_category)
+        subcategories = get_categories(level=2, parent_id=main_cat_id)
+
         prev_subcategory = st.session_state.get('subcategory')
         subcategory = st.selectbox(
             "Subcategory",
             [""] + subcategories,
             key='subcategory_select'
         )
-        
+
         # Detect subcategory change
         if subcategory != prev_subcategory:
             st.session_state.subcategory = subcategory
             st.session_state.subsubcategory = None
             st.session_state.subsubsubcategory = None
             st.rerun()
-        
+
         # Sub-subcategory selection (only show if subcategory is selected)
         if st.session_state.subcategory and st.session_state.subcategory != "":
-            subsubcategories = get_categories(
-                level=3, 
-                parent_id=get_category_id(st.session_state.subcategory)
-            )
-            
+            subcat_id = get_category_id(st.session_state.subcategory, parent_id=main_cat_id)
+            subsubcategories = get_categories(level=3, parent_id=subcat_id)
+
             if subsubcategories:  # Only show if subsubcategories exist
                 prev_subsubcategory = st.session_state.get('subsubcategory')
                 subsubcategory = st.selectbox(
@@ -100,19 +96,17 @@ def record_expense_page():
                     [""] + subsubcategories,
                     key='subsubcategory_select'
                 )
-                
+
                 # Detect subsubcategory change
                 if subsubcategory != prev_subsubcategory:
                     st.session_state.subsubcategory = subsubcategory
                     st.rerun()
-                
-                # Sub-sub-subcategory selection (only show if subsubcategory is selected and has children)
+
+                # Sub-sub-subcategory selection
                 if st.session_state.subsubcategory and st.session_state.subsubcategory != "":
-                    subsubsubcategories = get_categories(
-                        level=4, 
-                        parent_id=get_category_id(st.session_state.subsubcategory)
-                    )
-                    
+                    subsubcat_id = get_category_id(st.session_state.subsubcategory, parent_id=subcat_id)
+                    subsubsubcategories = get_categories(level=4, parent_id=subsubcat_id)
+
                     if subsubsubcategories:
                         subsubsubcategory = st.selectbox(
                             "Sub-Sub-Subcategory",
@@ -133,7 +127,7 @@ def record_expense_page():
         subcategory = None
         subsubcategory = None
         subsubsubcategory = None
-    
+        
     # VAT calculation section (outside form)
     st.subheader("VAT Calculation")
     col1, col2 = st.columns(2)
