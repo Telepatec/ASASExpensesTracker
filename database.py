@@ -51,12 +51,17 @@ def insert_default_categories(conn):
     c = conn.cursor()
     
     # Main Categories
-    main_categories = ["Food", "Fuel", "Lubricants", "Utilities", "Spare Parts"]
+    main_categories = [
+        "Food", "Fuel", "Lubricants", "Utilities", 
+        "Spare Parts", "Repair & Maintainance", "General Purchases"
+    ]
+    
     for cat in main_categories:
         c.execute("INSERT INTO categories (name, level) VALUES (?, ?)", (cat, 1))
         
-        c.execute("SELECT id, name FROM categories WHERE level = 1")
-        main_cats = {name: id for id, name in c.fetchall()}
+    # Fetch all main category IDs once, after insertion
+    c.execute("SELECT id, name FROM categories WHERE level = 1")
+    main_cats = {name: id for id, name in c.fetchall()}
     
     # Food Subcategories (level 2)
     food_subs = ["Worker Groceries", "Worker Water", "Worker Tea", 
@@ -184,6 +189,11 @@ def save_expense(date, category, subcategory, subsubcategory, subsubsubcategory,
         subsubcategory_id = get_category_id(subsubcategory) if subsubcategory else None
         subsubsubcategory_id = get_category_id(subsubsubcategory) if subsubsubcategory else None
         
+        # Ensure 4-decimal precision for all amounts
+        amount_before_vat = round(float(amount_before_vat), 4)
+        vat_amount = round(float(vat_amount), 4)
+        total_amount = round(float(total_amount), 4)
+        
         # Insert the expense
         c.execute('''INSERT INTO expenses 
                     (date, category_id, subcategory_id, subsubcategory_id, subsubsubcategory_id,
@@ -193,11 +203,18 @@ def save_expense(date, category, subcategory, subsubcategory, subsubsubcategory,
                  description, amount_before_vat, vat_amount, total_amount, entered_by))
         
         conn.commit()
-        print("DEBUG: Expense saved successfully!")  # Confirmation
+        print(f"DEBUG: Expense saved successfully! Amount: {total_amount:.4f}")  # Confirmation
+        
+        return c.lastrowid  # Return the ID of the newly created expense
         
     except sqlite3.Error as e:
         print(f"ERROR: Failed to save expense - {str(e)}")
+        conn.rollback()
         raise  # Re-raise the error after logging
+    except ValueError as e:
+        print(f"ERROR: Invalid numeric value - {str(e)}")
+        conn.rollback()
+        raise
     finally:
         conn.close()  # Ensure connection always closes
 
@@ -317,56 +334,63 @@ def get_category_summary(start_date=None, end_date=None):
     return df
 
 def get_expense_by_id(expense_id):
+    """Get complete expense details by ID"""
     conn = get_connection()
     c = conn.cursor()
-    c.execute('''SELECT * FROM expenses WHERE id = ?''', (expense_id,))
+    
+    c.execute('''SELECT e.*, 
+                        c1.name as category_name,
+                        c2.name as subcategory_name,
+                        c3.name as subsubcategory_name
+                 FROM expenses e
+                 LEFT JOIN categories c1 ON e.category_id = c1.id
+                 LEFT JOIN categories c2 ON e.subcategory_id = c2.id
+                 LEFT JOIN categories c3 ON e.subsubcategory_id = c3.id
+                 WHERE e.id = ?''', (expense_id,))
+    
     result = c.fetchone()
     conn.close()
     
     if result:
         columns = ['id', 'date', 'category_id', 'subcategory_id', 'subsubcategory_id',
                   'subsubsubcategory_id', 'description', 'amount_before_vat', 'vat_amount', 
-                  'total_amount', 'entered_by']
+                  'total_amount', 'entered_by', 'category_name', 'subcategory_name', 'subsubcategory_name']
         return dict(zip(columns, result))
     return None
 
-def update_expense(expense_id, description=None, amount_before_vat=None):
+def update_expense(expense_id, updates):
+    """Update an existing expense with the provided fields"""
     conn = get_connection()
     c = conn.cursor()
     
-    if description and amount_before_vat:
-        # Get existing expense to maintain VAT rate
-        existing = get_expense_by_id(expense_id)
-        vat_rate = existing['vat_amount'] / existing['amount_before_vat'] if existing['amount_before_vat'] > 0 else 0
+    try:
+        set_clauses = []
+        values = []
         
-        # Recalculate VAT and total
-        vat_amount = amount_before_vat * vat_rate
-        total_amount = amount_before_vat + vat_amount
+        for field, value in updates.items():
+            if field in ['amount_before_vat', 'vat_amount', 'total_amount']:
+                # Ensure 4-decimal precision for amounts
+                value = round(float(value), 4)
+            set_clauses.append(f"{field} = ?")
+            values.append(value)
         
-        c.execute('''UPDATE expenses 
-                     SET description = ?,
-                         amount_before_vat = ?,
-                         vat_amount = ?,
-                         total_amount = ?
-                     WHERE id = ?''',
-                 (description, amount_before_vat, vat_amount, total_amount, expense_id))
-    elif description:
-        c.execute('''UPDATE expenses SET description = ? WHERE id = ?''',
-                 (description, expense_id))
-    elif amount_before_vat:
-        existing = get_expense_by_id(expense_id)
-        vat_rate = existing['vat_amount'] / existing['amount_before_vat'] if existing['amount_before_vat'] > 0 else 0
-        vat_amount = amount_before_vat * vat_rate
-        total_amount = amount_before_vat + vat_amount
-        c.execute('''UPDATE expenses 
-                     SET amount_before_vat = ?,
-                         vat_amount = ?,
-                         total_amount = ?
-                     WHERE id = ?''',
-                 (amount_before_vat, vat_amount, total_amount, expense_id))
-    
-    conn.commit()
-    conn.close()
+        values.append(expense_id)
+        query = f"UPDATE expenses SET {', '.join(set_clauses)} WHERE id = ?"
+        
+        c.execute(query, values)
+        conn.commit()
+        print(f"DEBUG: Expense {expense_id} updated successfully")
+        
+    except sqlite3.Error as e:
+        print(f"ERROR: Failed to update expense {expense_id} - {str(e)}")
+        conn.rollback()
+        raise
+    except ValueError as e:
+        print(f"ERROR: Invalid numeric value in update - {str(e)}")
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 def get_all_expenses():
     conn = get_connection()
@@ -393,6 +417,17 @@ def get_all_expenses_pdf():
     from pdf_generator import generate_pdf_report
     df = get_all_expenses()
     return generate_pdf_report(df, "All Expense Records")
+
+def get_category_name(category_id):
+    """Get category name from ID"""
+    if category_id is None:
+        return None
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT name FROM categories WHERE id = ?", (category_id,))
+    result = c.fetchone()
+    conn.close()
+    return result[0] if result else None
 
 def get_connection():
     """Get a database connection"""
